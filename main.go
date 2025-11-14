@@ -162,11 +162,6 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			return serveFromCache()
 		}
 
-		if resp.StatusCode != http.StatusOK {
-			err := httputil.ResponseAsError(resp)
-			return scope.Err(err, "status not ok")
-		}
-
 		if revalidate {
 			log.Debug("failed to revalidate cache, proxying request")
 		} else {
