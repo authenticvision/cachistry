@@ -87,7 +87,7 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 
 		cached, err := app.cache.Get(cachePath)
 		if err != nil {
-			return logutil.NewError(err, "check cache")
+			return scope.Err(err, "check cache")
 		}
 		serveFromCache := func() error {
 			log.Debug("serving from cache")
@@ -120,12 +120,12 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			return serveFromCache()
 		}
 		if err != nil {
-			return logutil.NewError(err, "preflight")
+			return scope.Err(err, "preflight")
 		}
 
 		req, err := newRequest(r.Context(), http.MethodGet, upstreamURL)
 		if err != nil {
-			return logutil.NewError(err, "new request")
+			return scope.Err(err, "new request")
 		}
 		if revalidate {
 			req.Header.Set("If-None-Match", cached.ETag)
@@ -146,21 +146,21 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			return serveFromCache()
 		}
 		if err != nil {
-			return logutil.NewError(err, "do request")
+			return scope.Err(err, "do request")
 		}
 
 		if resp.StatusCode == http.StatusNotModified {
 			log.Debug("successfully revalidated cache")
 			err := app.cache.UpdateValidated(cachePath)
 			if err != nil {
-				return logutil.NewError(err, "update cache expiry")
+				return scope.Err(err, "update cache expiry")
 			}
 			return serveFromCache()
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			err := httputil.ResponseAsError(resp)
-			return logutil.NewError(err, "status not ok")
+			return scope.Err(err, "status not ok")
 		}
 
 		if revalidate {
@@ -183,7 +183,7 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 
 		f, cleanup, err := app.cache.Create(contentType, eTag)
 		if err != nil {
-			return logutil.NewError(err, "create cache file")
+			return scope.Err(err, "create cache file")
 		}
 		defer cleanup()
 
@@ -193,12 +193,12 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 
 		_, err = io.Copy(w, body)
 		if err != nil {
-			return logutil.NewError(err, "copy")
+			return scope.Err(err, "copy")
 		}
 
 		err = app.cache.Store(f, cachePath)
 		if err != nil {
-			return logutil.NewError(err, "store cache file")
+			return scope.Err(err, "store cache file")
 		}
 
 		return nil
