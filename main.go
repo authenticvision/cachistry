@@ -32,6 +32,7 @@ type Config struct {
 	CacheDir               string   `flag:"required"`
 	CacheSize              fmtutil.Bytes
 	UnconditionalCacheTime time.Duration
+	UpstreamTimeout        time.Duration
 }
 
 type App struct {
@@ -56,6 +57,7 @@ func main() {
 		},
 		CacheSize:              1 << 30,
 		UnconditionalCacheTime: 5 * time.Minute,
+		UpstreamTimeout:        10 * time.Second,
 	})
 	mainutil.Run(cmd)
 }
@@ -113,12 +115,14 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			return httpp.NotFound("registry not found")
 		}
 
+		upstreamCtx, upstreamCancel := context.WithTimeout(r.Context(), cfg.UpstreamTimeout)
+		defer upstreamCancel()
 		upstreamURL := (&url.URL{
 			Scheme: "https",
 			Host:   reg,
 			Path:   "/v2/",
 		}).JoinPath(path)
-		token, err := app.preflight(r.Context(), upstreamURL)
+		token, err := app.preflight(upstreamCtx, upstreamURL)
 		if revalidate && err != nil {
 			log.Warn("preflight failed, serving from cache")
 			return serveFromCache()
@@ -127,7 +131,7 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			return scope.Err(err, "preflight")
 		}
 
-		req, err := newRequest(r.Context(), http.MethodGet, upstreamURL)
+		req, err := newRequest(upstreamCtx, http.MethodGet, upstreamURL)
 		if err != nil {
 			return scope.Err(err, "new request")
 		}
