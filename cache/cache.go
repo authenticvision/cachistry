@@ -4,39 +4,83 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
+	"github.com/authenticvision/util-go/fmtutil"
 	"golang.org/x/sys/unix"
 )
 
 type Cache struct {
 	root *os.Root
 
-	mu       sync.Mutex
-	usedSize uint64
-	maxSize  uint64
+	files     files
+	usedBytes uint64
+	maxBytes  uint64
 }
 
 const tmpDir = "-/tmp"
 
-func NewCache(path string, maxSize uint64) (*Cache, error) {
+func NewCache(path string, maxSizeBytes uint64) (*Cache, error) {
 	r, err := os.OpenRoot(path)
 	if err != nil {
 		return nil, fmt.Errorf("openroot: %w", err)
 	}
-	err = r.MkdirAll(tmpDir, 0777)
+	c := &Cache{
+		root:     r,
+		maxBytes: maxSizeBytes,
+	}
+	err = c.root.MkdirAll(tmpDir, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir tmp: %w", err)
 	}
-	return &Cache{
-		root:    r,
-		maxSize: maxSize,
-	}, nil
+	err = fs.WalkDir(c.root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if strings.HasPrefix(path, tmpDir+"/") {
+			err := c.root.Remove(path)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		c.files.InsertOrReplace(file{
+			path:         path,
+			size:         uint64(info.Size()),
+			lastAccessed: atime(info),
+		})
+		atomic.AddUint64(&c.usedBytes, uint64(info.Size()))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk storage dir: %w", err)
+	}
+	slog.Info(
+		"cache initialized",
+		slog.String("path", path),
+		c.statAttr(),
+	)
+	return c, nil
+}
+
+func (c *Cache) statAttr() slog.Attr {
+	used := atomic.LoadUint64(&c.usedBytes)
+	return slog.GroupAttrs("stats",
+		slog.Float64("used_percent", 100*float64(used)/float64(c.maxBytes)),
+		slog.String("used", fmtutil.FormatBytes(used)),
+		slog.String("max", fmtutil.FormatBytes(c.maxBytes)),
+	)
 }
 
 const xattrMIME = "user.com.authenticvision.docker-registry-caching-proxy.mimetype"
@@ -110,8 +154,12 @@ func (c *Cache) Create(mimeType string, eTag string) (*os.File, TempRemover, err
 }
 
 // Store moves a temporary file into place, overriding previously existing files
-func (c *Cache) Store(f *os.File, path string) error {
-	err := c.root.MkdirAll(filepath.Dir(path), fs.ModePerm)
+func (c *Cache) Store(f *os.File, path string, size uint64) error {
+	err := c.evict(size)
+	if err != nil {
+		return fmt.Errorf("evict: %w", err)
+	}
+	err = c.root.MkdirAll(filepath.Dir(path), fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -123,11 +171,58 @@ func (c *Cache) Store(f *os.File, path string) error {
 	if err != nil {
 		return err
 	}
+	if old, replaced := c.files.InsertOrReplace(file{
+		path:         path,
+		size:         size,
+		lastAccessed: time.Now(),
+	}); replaced {
+		atomicSubtract(&c.usedBytes, old.size)
+	}
+	atomic.AddUint64(&c.usedBytes, size)
 	return nil
+}
+
+func atomicSubtract(addr *uint64, delta uint64) uint64 {
+	return atomic.AddUint64(addr, ^(delta - 1))
 }
 
 func (c *Cache) UpdateValidated(path string) error {
 	return setXAttr(c.absoluteInRoot(path), xattrValidated, time.Now().UTC().Format(time.RFC3339))
+}
+
+func (c *Cache) evict(size uint64) error {
+	if atomic.LoadUint64(&c.usedBytes)+size <= c.maxBytes {
+		return nil
+	}
+	toEvict := int64(size)
+	before := c.statAttr()
+	err := c.files.Range(func(f file) error {
+		slog.Debug("evicting file",
+			slog.String("path", f.path),
+			slog.String("size", fmtutil.FormatBytes(f.size)),
+		)
+		err := c.root.Remove(f.path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		atomicSubtract(&c.usedBytes, f.size)
+		toEvict -= int64(f.size)
+		if toEvict <= 0 {
+			return errRangeDone
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	slog.Debug("evicted files from cache",
+		slog.Any("before", before),
+		slog.Any("after", c.statAttr()),
+		slog.String("deleted", fmtutil.FormatBytes(uint64(int64(size)-toEvict))),
+	)
+	return nil
 }
 
 func (c *Cache) relativeToRoot(path string) string {
@@ -161,4 +256,15 @@ func setXAttr(path string, attr string, data string) error {
 		return fmt.Errorf("setxattr %q: %w", attr, err)
 	}
 	return nil
+}
+
+func atime(info os.FileInfo) time.Time {
+	switch stat := info.Sys().(type) {
+	case *syscall.Stat_t:
+		return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
+	case *unix.Stat_t:
+		return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
+	default:
+		panic(fmt.Sprintf("fetch atime: unknown os.FileInfo.Sys() type: %T", stat))
+	}
 }

@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/authenticvision/docker-registry-caching-proxy/cache"
 	"github.com/authenticvision/docker-registry-caching-proxy/httputil"
 	"github.com/authenticvision/docker-registry-caching-proxy/wwwauth"
+	"github.com/authenticvision/util-go/fmtutil"
 	"github.com/authenticvision/util-go/httpp"
 	"github.com/authenticvision/util-go/logutil"
 	"github.com/authenticvision/util-go/mainutil"
@@ -28,6 +30,7 @@ type Config struct {
 
 	Registries             []string `flag:"required" env:"-" usage:"docker.io, ghcr.io, etc"`
 	CacheDir               string   `flag:"required"`
+	CacheSize              fmtutil.Bytes
 	UnconditionalCacheTime time.Duration
 }
 
@@ -51,13 +54,14 @@ func main() {
 		ServerConfig: mainutil.ServerConfig{
 			BindAddr: "127.0.0.1:5000",
 		},
+		CacheSize:              1 << 30,
 		UnconditionalCacheTime: 5 * time.Minute,
 	})
 	mainutil.Run(cmd)
 }
 
 func (app *App) setup(cfg *Config, cmd *cobra.Command, args []string) (err error) {
-	app.cache, err = cache.NewCache(cfg.CacheDir, 1<<30)
+	app.cache, err = cache.NewCache(cfg.CacheDir, uint64(cfg.CacheSize))
 	if err != nil {
 		return fmt.Errorf("create cache: %w", err)
 	}
@@ -171,11 +175,14 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 
 		eTag := resp.Header.Get("ETag")
 		contentType := resp.Header.Get("Content-Type")
+		contentLengthStr := resp.Header.Get("Content-Length")
+		contentLength, err := strconv.ParseUint(contentLengthStr, 10, 64)
+		if contentLengthStr == "" || err != nil {
+			return scope.Err(err, "proxied response has no content-length, this is unsupported")
+		}
 		w.Header().Set("ETag", eTag)
 		w.Header().Set("Content-Type", contentType)
-		if v := resp.Header.Get("Content-Length"); v != "" {
-			w.Header().Set("Content-Length", v)
-		}
+		w.Header().Set("Content-Length", contentLengthStr)
 
 		// Note: ETag from the client isn't taken into account because neither
 		// docker nor podman use it at all. We can still use it to check
@@ -196,7 +203,7 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			return scope.Err(err, "copy")
 		}
 
-		err = app.cache.Store(f, cachePath)
+		err = app.cache.Store(f, cachePath, contentLength)
 		if err != nil {
 			return scope.Err(err, "store cache file")
 		}

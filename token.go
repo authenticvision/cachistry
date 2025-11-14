@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 
@@ -42,8 +43,12 @@ func (app *App) fetchToken(ctx context.Context, wwwAuth wwwauth.WWWAuthenticate)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.Header.Get("Content-Type") != "application/json" {
-		return Token{}, logutil.NewError(nil, "unexpected content type")
+	mimeType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if mimeType != "application/json" {
+		return Token{}, logutil.NewError(
+			nil, "unexpected content type",
+			slog.String("content_type", resp.Header.Get("Content-Type")),
+		)
 	}
 
 	var token Token
