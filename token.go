@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/authenticvision/docker-registry-caching-proxy/httputil"
-	"github.com/authenticvision/docker-registry-caching-proxy/wwwauth"
+	"github.com/authenticvision/cachistry/httputil"
+	"github.com/authenticvision/cachistry/wwwauth"
 	"github.com/authenticvision/util-go/logutil"
 )
 

@@ -1,4 +1,4 @@
-module github.com/authenticvision/docker-registry-caching-proxy
+module github.com/authenticvision/cachistry
 
 go 1.25.3
 

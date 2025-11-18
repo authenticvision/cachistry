@@ -83,9 +83,9 @@ func (c *Cache) statAttr() slog.Attr {
 	)
 }
 
-const xattrMIME = "user.com.authenticvision.docker-registry-caching-proxy.mimetype"
-const xattrETag = "user.com.authenticvision.docker-registry-caching-proxy.etag"
-const xattrValidated = "user.com.authenticvision.docker-registry-caching-proxy.validated" // timestamp when ETag was last verified (RFC 3339)
+const xattrMIME = "user.com.authenticvision.cachistry.mimetype"
+const xattrETag = "user.com.authenticvision.cachistry.etag"
+const xattrValidated = "user.com.authenticvision.cachistry.validated" // timestamp when ETag was last verified (RFC 3339)
 
 type Cached struct {
 	MIMEType  string

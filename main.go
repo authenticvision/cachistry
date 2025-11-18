@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/authenticvision/docker-registry-caching-proxy/cache"
-	"github.com/authenticvision/docker-registry-caching-proxy/httputil"
-	"github.com/authenticvision/docker-registry-caching-proxy/wwwauth"
+	"github.com/authenticvision/cachistry/cache"
+	"github.com/authenticvision/cachistry/httputil"
+	"github.com/authenticvision/cachistry/wwwauth"
 	"github.com/authenticvision/util-go/fmtutil"
 	"github.com/authenticvision/util-go/httpp"
 	"github.com/authenticvision/util-go/logutil"
@@ -49,7 +49,7 @@ func main() {
 		tokenCache: ttlmap.New[wwwauth.WWWAuthenticate, Token](5 * time.Minute),
 	}
 	cmd := mainutil.RootCommand(app.setup, mainutil.Server(app.run), cobra.Command{
-		Use: "docker-registry-caching-proxy",
+		Use: "cachistry",
 	}, Config{
 		LogConfig: mainutil.LogDefault,
 		ServerConfig: mainutil.ServerConfig{
@@ -247,6 +247,6 @@ func newRequest(ctx context.Context, method string, u *url.URL) (*http.Request, 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "docker-registry-caching-proxy/0.1 (+https://github.com/authenticvision/docker-registry-caching-proxy)")
+	req.Header.Set("User-Agent", "cachistry/0.1 (+https://github.com/authenticvision/cachistry)")
 	return req, nil
 }
