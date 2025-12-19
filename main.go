@@ -213,6 +213,7 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 }
 
 func (app *App) preflight(ctx context.Context, upstreamURL *url.URL) (string, error) {
+	log := logutil.FromContext(ctx)
 	preflightReq, err := newRequest(ctx, http.MethodHead, upstreamURL)
 	if err != nil {
 		return "", logutil.NewError(err, "new request")
@@ -230,6 +231,7 @@ func (app *App) preflight(ctx context.Context, upstreamURL *url.URL) (string, er
 			)
 		}
 
+		log.Debug("preflight request unauthorized, fetching token")
 		tokenResp, err := app.fetchToken(ctx, parsed)
 		if err != nil {
 			return "", logutil.NewError(err, "fetch token")
@@ -239,6 +241,7 @@ func (app *App) preflight(ctx context.Context, upstreamURL *url.URL) (string, er
 		err := httputil.ResponseAsError(resp)
 		return "", logutil.NewError(err, "status not ok")
 	}
+	log.Debug("preflight request successful, proceeding without authentication")
 	return "", nil
 }
 

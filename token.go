@@ -57,7 +57,7 @@ func (app *App) fetchToken(ctx context.Context, wwwAuth wwwauth.WWWAuthenticate)
 		return Token{}, logutil.NewError(err, "unmarshal token")
 	}
 
-	slog.Debug("fetched token")
+	slog.Debug("fetched token", slog.Any("token", token))
 	app.tokenCache.Store(wwwAuth, token)
 	return token, nil
 }
