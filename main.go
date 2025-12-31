@@ -140,16 +140,17 @@ func (app *App) run(cfg *Config, cmd *cobra.Command, args []string) (httpp.Handl
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		resp, err := app.client.Do(req)
-		if err == nil &&
-			!(resp.StatusCode == http.StatusOK ||
-				resp.StatusCode == http.StatusNotModified) {
-			err = httputil.ResponseAsError(resp)
-		}
-		if revalidate && err != nil {
-			log.Warn("proxying request failed, serving from cache")
-			return serveFromCache()
+		if err == nil {
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotModified {
+				err = httputil.ResponseAsError(resp)
+			}
 		}
 		if err != nil {
+			if revalidate {
+				log.Warn("proxying request failed, serving from cache")
+				return serveFromCache()
+			}
 			return scope.Err(err, "do request")
 		}
 
@@ -218,6 +219,7 @@ func (app *App) preflight(ctx context.Context, upstreamURL *url.URL) (string, er
 	if err != nil {
 		return "", logutil.NewError(err, "do request")
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
 		parsed, err := wwwauth.Parse(resp.Header.Get("WWW-Authenticate"))
 		if err != nil {

@@ -36,12 +36,12 @@ func (app *App) fetchToken(ctx context.Context, wwwAuth wwwauth.WWWAuthenticate)
 	if err != nil {
 		return Token{}, logutil.NewError(err, "do request")
 	}
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		err := httputil.ResponseAsError(resp)
 		return Token{}, logutil.NewError(err, "status not ok")
 	}
-	defer func() { _ = resp.Body.Close() }()
 
 	mimeType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if mimeType != "application/json" {

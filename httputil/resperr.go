@@ -17,10 +17,9 @@ func (e Error) Error() string {
 
 // ResponseAsError packs an http.Response into an error. It assumes the user
 // has checked the status code already. It reads up to 4KiB of body as error
-// message and closes the body.
+// message. The caller must close resp.Body.
 func ResponseAsError(resp *http.Response) error {
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024))
-	_ = resp.Body.Close()
 	return &Error{
 		StatusCode: resp.StatusCode,
 		Message:    string(msg),
