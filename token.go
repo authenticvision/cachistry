@@ -44,6 +44,9 @@ func (app *App) fetchToken(ctx context.Context, wwwAuth wwwauth.WWWAuthenticate)
 	}
 
 	mimeType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		return Token{}, logutil.NewError(err, "parse media type")
+	}
 	if mimeType != "application/json" {
 		return Token{}, logutil.NewError(
 			nil, "unexpected content type",

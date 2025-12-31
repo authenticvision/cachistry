@@ -225,10 +225,7 @@ func (c *Cache) evict(size uint64) error {
 }
 
 func (c *Cache) relativeToRoot(path string) string {
-	root := c.root.Name()
-	if strings.HasPrefix(path, root) {
-		path = path[len(root):]
-	}
+	path = strings.TrimPrefix(path, c.root.Name())
 	if len(path) > 0 && path[0] == '/' {
 		path = path[1:]
 	}

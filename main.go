@@ -22,8 +22,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var packageScope = logutil.NewScope("coordinator")
-
 type Config struct {
 	mainutil.LogConfig
 	mainutil.ServerConfig
