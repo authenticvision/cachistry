@@ -47,7 +47,7 @@ func (l *files) delete(f file) (old file, replaced bool) {
 	}); i >= 0 {
 		replaced = true
 		old = l.files[i]
-		slices.Delete(l.files, i, i+1)
+		l.files = slices.Delete(l.files, i, i+1)
 	}
 	return
 }
