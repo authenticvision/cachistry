@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/authenticvision/util-go/fmtutil"
@@ -256,15 +255,4 @@ func setXAttr(path string, attr string, data string) error {
 		return fmt.Errorf("setxattr %q: %w", attr, err)
 	}
 	return nil
-}
-
-func atime(info os.FileInfo) time.Time {
-	switch stat := info.Sys().(type) {
-	case *syscall.Stat_t:
-		return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
-	case *unix.Stat_t:
-		return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
-	default:
-		panic(fmt.Sprintf("fetch atime: unknown os.FileInfo.Sys() type: %T", stat))
-	}
 }
