@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,7 @@ import (
 type Cache struct {
 	root *os.Root
 
-	files     files
+	files     *files
 	usedBytes uint64
 	maxBytes  uint64
 }
@@ -33,12 +34,21 @@ func NewCache(path string, maxSizeBytes uint64) (*Cache, error) {
 	}
 	c := &Cache{
 		root:     r,
+		files:    newFiles(),
 		maxBytes: maxSizeBytes,
 	}
 	err = c.root.MkdirAll(tmpDir, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir tmp: %w", err)
 	}
+
+	type fileAccessTime struct {
+		file
+		lastAccessed time.Time
+	}
+	var discoveredFiles []fileAccessTime
+
+	timeStart := time.Now()
 	err = fs.WalkDir(c.root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -54,9 +64,8 @@ func NewCache(path string, maxSizeBytes uint64) (*Cache, error) {
 		if err != nil {
 			return err
 		}
-		c.files.InsertOrReplace(file{
-			path:         path,
-			size:         uint64(info.Size()),
+		discoveredFiles = append(discoveredFiles, fileAccessTime{
+			file:         file{path: path, size: uint64(info.Size())},
 			lastAccessed: atime(info),
 		})
 		atomic.AddUint64(&c.usedBytes, uint64(info.Size()))
@@ -65,9 +74,24 @@ func NewCache(path string, maxSizeBytes uint64) (*Cache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("walk storage dir: %w", err)
 	}
+	timeWalk := time.Now()
+
+	slices.SortFunc(discoveredFiles, func(a, b fileAccessTime) int {
+		return int(a.lastAccessed.Sub(b.lastAccessed) / time.Second)
+	})
+	timeSort := time.Now()
+
+	for _, f := range discoveredFiles {
+		c.files.InsertOrReplace(f.file)
+	}
+	timeInsert := time.Now()
+
 	slog.Info(
 		"cache initialized",
 		slog.String("path", path),
+		slog.Duration("perf_walk", timeWalk.Sub(timeStart)),
+		slog.Duration("perf_sort", timeSort.Sub(timeWalk)),
+		slog.Duration("perf_insert", timeInsert.Sub(timeSort)),
 		c.statAttr(),
 	)
 	return c, nil
@@ -171,9 +195,8 @@ func (c *Cache) Store(f *os.File, path string, size uint64) error {
 		return err
 	}
 	if old, replaced := c.files.InsertOrReplace(file{
-		path:         path,
-		size:         size,
-		lastAccessed: time.Now(),
+		path: path,
+		size: size,
 	}); replaced {
 		atomicSubtract(&c.usedBytes, old.size)
 	}

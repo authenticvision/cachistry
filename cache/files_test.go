@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestFiles_HappyPath(t *testing.T) {
 	r := require.New(t)
-	l := &files{}
+	l := newFiles()
 
 	mustRange := func() []file {
 		var got []file
@@ -107,12 +106,9 @@ func BenchmarkFiles_InsertDelete(b *testing.B) {
 	const cacheSize = 1000
 	items := make([]file, cacheSize)
 	for i := 0; i < cacheSize; i++ {
-		items[i] = file{
-			path:         fmt.Sprintf("file-%d", i),
-			lastAccessed: time.Now().Add(time.Duration(i) * time.Second),
-		}
+		items[i] = file{path: fmt.Sprintf("file-%d", i)}
 	}
-	l := &files{}
+	l := newFiles()
 	for _, i := range rand.Perm(cacheSize) {
 		l.InsertOrReplace(items[i])
 	}
